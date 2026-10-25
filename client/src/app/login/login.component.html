@@ -1,0 +1,12 @@
+<main class="page">
+  <h1>Workflow Automation</h1>
+  <p>Sign in to continue</p>
+
+  @if (error) {
+    <p class="error" role="alert">{{ error }}</p>
+  }
+
+  <button type="button" class="github-button" (click)="login()">
+    Login with GitHub
+  </button>
+</main>

@@ -1,0 +1,13 @@
+<main class="page">
+  @if (loading()) {
+    <p>Loading…</p>
+  } @else if (displayName()) {
+    <h1>Welcome, {{ displayName() }}</h1>
+    <p>You are signed in with GitHub.</p>
+    <button type="button" class="logout-button" (click)="logout()">
+      Log out
+    </button>
+  } @else if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+</main>

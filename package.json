@@ -12,14 +12,15 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "pnpm --filter server typecheck && pnpm --filter client typecheck",
+    "test": "pnpm --filter server test",
     "prepare": "husky"
   },
   "devDependencies": {
-    "@eslint/js": "^9.18.0",
-    "eslint": "^9.18.0",
-    "globals": "^15.14.0",
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^15.15.0",
     "husky": "^9.1.7",
-    "typescript-eslint": "^8.21.0"
+    "typescript-eslint": "^8.72.0"
   },
   "engines": {
     "node": ">=18",
