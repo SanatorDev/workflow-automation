@@ -1,0 +1,51 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  text-align: center;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+  font-size: 1.125rem;
+  color: #444;
+}
+
+.error {
+  color: #b42318;
+  max-width: 28rem;
+}
+
+.github-button {
+  margin-top: 0.5rem;
+  appearance: none;
+  border: 1px solid #24292f;
+  border-radius: 6px;
+  background: #24292f;
+  color: #fff;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+}
+
+.github-button:hover {
+  background: #32383f;
+}
+
+.github-button:focus-visible {
+  outline: 2px solid #0969da;
+  outline-offset: 2px;
+}

@@ -1,0 +1,50 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  text-align: center;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0;
+  font-size: 1.125rem;
+  color: #444;
+}
+
+.error {
+  color: #b42318;
+}
+
+.logout-button {
+  margin-top: 0.5rem;
+  appearance: none;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  color: #24292f;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+}
+
+.logout-button:hover {
+  background: #f6f8fa;
+}
+
+.logout-button:focus-visible {
+  outline: 2px solid #0969da;
+  outline-offset: 2px;
+}

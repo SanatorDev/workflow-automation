@@ -16,13 +16,15 @@ Full-stack starter for the workflow automation take-home exercise.
 
 ```
 workflow-automation/
-├── client/                 # Angular frontend
+├── client/                 # Angular frontend (login + welcome)
 ├── server/
 │   └── src/
 │       ├── app.ts          # Express app (middleware + routes)
 │       ├── server.ts       # Bootstrap (env, DB, listen)
 │       ├── config/         # Env + Mongoose helpers
-│       └── routes/         # API route modules
+│       ├── models/         # Mongoose models (User)
+│       ├── routes/         # API route modules (health, auth)
+│       └── services/       # GitHub OAuth helpers
 ├── .env                    # Secrets (not committed; see .env.example)
 ├── .env.example            # Template for required env vars
 ├── package.json            # pnpm workspace root
@@ -55,13 +57,28 @@ workflow-automation/
    PORT=3000
    MONGODB_URI="mongodb+srv://..."
    CLIENT_ORIGIN="http://localhost:4200"
+   GITHUB_CLIENT_ID=
+   GITHUB_CLIENT_SECRET=
+   GITHUB_CALLBACK_URL="http://localhost:4200/api/auth/github/callback"
+   SESSION_SECRET="change-me-to-a-long-random-string"
+   TOKEN_ENCRYPTION_KEY="change-me-to-a-long-random-string"
    ```
 
    `CLIENT_ORIGIN` is the Angular dev-server origin allowed by CORS. Production serves the built client from the same Express origin, so the browser does not need a separate CORS origin there.
 
    Do not set `NODE_ENV` in `.env`. Leave it to the start scripts: `pnpm dev` / `pnpm dev:server` stay in development (API only; use the Angular dev server on port 4200), and `pnpm start:server` sets `NODE_ENV=production` so Express serves the built client. Putting `NODE_ENV=production` in `.env` would also serve the client build during local API-only runs.
 
-3. **Install dependencies** for the whole workspace:
+3. **Register a GitHub OAuth App** ([docs](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app)):
+
+   - Homepage URL: `http://localhost:4200`
+   - Authorization callback URL: `http://localhost:4200/api/auth/github/callback` (must match `GITHUB_CALLBACK_URL`; proxied to Express in local dev)
+   - Copy the Client ID and Client Secret into `.env`
+
+   The app requests the `read:user` scope for login ([scopes](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)). Broader scopes (e.g. repo access) can be added when a feature needs them.
+
+   In production, `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY`, and `GITHUB_CALLBACK_URL` are required. Secrets must be random and at least 32 characters (no example placeholders). `SESSION_SECRET` signs cookies; `TOKEN_ENCRYPTION_KEY` encrypts GitHub access tokens at rest — keep them distinct so either can be rotated alone.
+
+4. **Install dependencies** for the whole workspace:
 
    ```bash
    pnpm install
@@ -85,15 +102,29 @@ pnpm dev:server
 pnpm dev:client
 ```
 
-Open [http://localhost:4200](http://localhost:4200). The home page shows the exercise title and the current MongoDB connection status from `GET /api/health`. The Angular dev server proxies `/api` to the Express API.
+Open [http://localhost:4200](http://localhost:4200). The login page offers **Login with GitHub**. After authorizing, you land on `/welcome` with your GitHub name. The Angular dev server proxies `/api` to the Express API.
+
+## GitHub OAuth flow
+
+Per the [web application flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps):
+
+1. Browser visits `GET /api/auth/github` → redirect to GitHub authorize (`read:user`)
+2. GitHub redirects to `GET /api/auth/github/callback` with a temporary `code`
+3. Server exchanges the code for an access token, loads `/user`, upserts the `User` document (access token encrypted at rest), sets a signed session cookie, then redirects to `/welcome`
+
+Login failures redirect to `/login?error=<code>` with a stable code (`oauth_not_configured`, `missing_code`, `invalid_state`, `access_denied`, `login_failed`) — never GitHub’s free-text `error_description`.
 
 ## API
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/api/health` | Returns MongoDB connection state (`200` when connected, `503` otherwise) |
+| `GET` | `/api/auth/github` | Starts GitHub OAuth (redirect) |
+| `GET` | `/api/auth/github/callback` | OAuth callback; saves user and redirects to `/welcome` |
+| `GET` | `/api/auth/me` | Current session user (`name`, `login`) or `401` |
+| `POST` | `/api/auth/logout` | Clears the session cookie |
 
-Example response (connected):
+Example health response (connected):
 
 ```json
 {
@@ -102,14 +133,15 @@ Example response (connected):
 }
 ```
 
-## Lint & Typecheck
+## Lint, Typecheck & Test
 
 ```bash
 pnpm lint
 pnpm typecheck
+pnpm test
 ```
 
-Husky runs both on every commit via `.husky/pre-commit`. After cloning, `pnpm install` installs the hook through the root `prepare` script.
+Husky runs lint and typecheck on every commit via `.husky/pre-commit`. After cloning, `pnpm install` installs the hook through the root `prepare` script.
 
 ## Production Build
 
