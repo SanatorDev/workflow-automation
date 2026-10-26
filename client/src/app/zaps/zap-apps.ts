@@ -52,14 +52,9 @@ export function isGitHubApp(app: string): boolean {
  */
 export const BODY_FIELD_MAPPINGS = [
   { label: 'Author', token: 'author' },
-  {
-    label: 'Head repo default branch',
-    token: 'head_repo_default_branch',
-  },
-  {
-    label: 'Base repo default branch',
-    token: 'base_repo_default_branch',
-  },
+  { label: 'Head branch', token: 'headBranch' },
+  { label: 'Base branch', token: 'baseBranch' },
+  { label: 'Number', token: 'number' },
 ] as const;
 
 export function bodyFieldToken(token: string): string {
@@ -74,7 +69,7 @@ export function bodyTokensInMessage(body: string): string[] {
   const found: string[] = [];
   const seen = new Set<string>();
 
-  for (const match of body.matchAll(/\{\{([a-z0-9_]+)\}\}/g)) {
+  for (const match of body.matchAll(/\{\{([a-zA-Z0-9_]+)\}\}/g)) {
     const token = match[1];
     if (!known.has(token) || seen.has(token)) {
       continue;

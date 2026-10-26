@@ -30,6 +30,10 @@ export interface IZap extends Document {
   isOn: boolean;
   trigger: IZapStep;
   action: IZapStep;
+  /** GitHub webhook id for this Zap (set while on). */
+  githubWebhookId?: number;
+  /** AES-GCM ciphertext of the webhook secret used for HMAC verification. */
+  githubWebhookSecret?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,6 +73,8 @@ const zapSchema = new Schema<IZap>(
     isOn: { type: Boolean, default: false },
     trigger: { type: zapStepSchema, required: true },
     action: { type: zapStepSchema, required: true },
+    githubWebhookId: { type: Number },
+    githubWebhookSecret: { type: String, select: false },
   },
   { timestamps: true }
 );
