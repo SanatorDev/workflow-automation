@@ -4,9 +4,12 @@
   } @else if (displayName()) {
     <h1>Welcome, {{ displayName() }}</h1>
     <p>You are signed in with GitHub.</p>
-    <button type="button" class="logout-button" (click)="logout()">
-      Log out
-    </button>
+    <div class="actions">
+      <a routerLink="/zaps" class="primary-link">Manage Zaps</a>
+      <button type="button" class="logout-button" (click)="logout()">
+        Log out
+      </button>
+    </div>
   } @else if (error()) {
     <p class="error">{{ error() }}</p>
   }

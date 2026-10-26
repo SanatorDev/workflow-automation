@@ -1,0 +1,168 @@
+<main class="page">
+  <p class="eyebrow"><a routerLink="/zaps">← Your Zaps</a></p>
+  <h1>{{ isEdit() ? 'Edit Zap' : 'Create Zap' }}</h1>
+  <p class="subtitle">
+    A Zap connects apps: choose a trigger, an action, and map fields into the
+    action Body.
+  </p>
+
+  @if (loading()) {
+    <p>Loading…</p>
+  } @else {
+    <form class="form" [formGroup]="form" (ngSubmit)="save()">
+      <section class="section">
+        <h2>Basics</h2>
+        <label class="field">
+          <span>Name</span>
+          <input type="text" formControlName="name" autocomplete="off" />
+        </label>
+        <label class="toggle">
+          <input type="checkbox" formControlName="isOn" />
+          <span>On (published — processes new data after you turn it on)</span>
+        </label>
+      </section>
+
+      <section class="section">
+        <h2>Trigger</h2>
+        <p class="hint">The event that starts the Zap.</p>
+        <div class="row">
+          <label class="field">
+            <span>App</span>
+            <select formControlName="triggerApp">
+              @for (app of apps; track app) {
+                <option [value]="app" [disabled]="!appIsWired(app)">
+                  {{ app }}
+                </option>
+              }
+            </select>
+          </label>
+          <label class="field">
+            <span>Event</span>
+            <select formControlName="triggerEvent">
+              @if (triggerEvents().length === 0) {
+                <option value="">No events for this app yet</option>
+              }
+              @for (event of triggerEvents(); track event) {
+                <option [value]="event">{{ event }}</option>
+              }
+            </select>
+          </label>
+        </div>
+        @if (isGitHub(form.controls.triggerApp.value)) {
+          <fieldset class="config">
+            <legend>Configuration</legend>
+            <label class="field">
+              <span>Repository</span>
+              <select formControlName="triggerRepository">
+                <option value="">
+                  @if (reposLoading()) {
+                    Loading repositories…
+                  } @else {
+                    Select a repository
+                  }
+                </option>
+                @for (repo of repositories(); track repo.id) {
+                  <option [value]="repo.fullName">{{ repo.fullName }}</option>
+                }
+              </select>
+            </label>
+            @if (reposError()) {
+              <p class="field-error">{{ reposError() }}</p>
+            }
+          </fieldset>
+        }
+      </section>
+
+      <section class="section">
+        <h2>Action</h2>
+        <p class="hint">What the Zap does after it triggers.</p>
+        <div class="row">
+          <label class="field">
+            <span>App</span>
+            <select formControlName="actionApp">
+              @for (app of apps; track app) {
+                <option [value]="app" [disabled]="!appIsWired(app)">
+                  {{ app }}
+                </option>
+              }
+            </select>
+          </label>
+          <label class="field">
+            <span>Event</span>
+            <select formControlName="actionEvent">
+              @if (actionEvents().length === 0) {
+                <option value="">No events for this app yet</option>
+              }
+              @for (event of actionEvents(); track event) {
+                <option [value]="event">{{ event }}</option>
+              }
+            </select>
+          </label>
+        </div>
+        @if (isGitHub(form.controls.actionApp.value)) {
+          <fieldset class="config">
+            <legend>Configuration</legend>
+            <label class="field">
+              <span>Repository</span>
+              <select formControlName="actionRepository">
+                <option value="">
+                  @if (reposLoading()) {
+                    Loading repositories…
+                  } @else {
+                    Select a repository
+                  }
+                </option>
+                @for (repo of repositories(); track repo.id) {
+                  <option [value]="repo.fullName">{{ repo.fullName }}</option>
+                }
+              </select>
+            </label>
+            @if (reposError()) {
+              <p class="field-error">{{ reposError() }}</p>
+            }
+
+            <div class="body-field">
+              <div class="body-header">
+                <span class="body-label">Body</span>
+                <div class="field-inserts" role="group" aria-label="Insert mapped fields">
+                  <span class="insert-label">Insert:</span>
+                  @for (field of bodyFieldMappings; track field.token) {
+                    <button
+                      type="button"
+                      class="insert-button"
+                      (click)="insertBodyField(field.token)"
+                    >
+                      {{ field.label }}
+                    </button>
+                  }
+                </div>
+              </div>
+              <textarea
+                #actionBodyInput
+                formControlName="actionBody"
+                rows="6"
+                placeholder="Custom comment message. Insert mapped fields from the trigger above."
+              ></textarea>
+              <p class="hint">
+                Mix static text with mapped fields (e.g. author) from the
+                trigger. Selected fields appear as
+                <code ngNonBindable>{{token}}</code> in the message.
+              </p>
+            </div>
+          </fieldset>
+        }
+      </section>
+
+      @if (error()) {
+        <p class="error" role="alert">{{ error() }}</p>
+      }
+
+      <div class="actions">
+        <button type="submit" class="primary-button" [disabled]="saving()">
+          {{ saving() ? 'Saving…' : isEdit() ? 'Save Zap' : 'Create Zap' }}
+        </button>
+        <a routerLink="/zaps" class="cancel-link">Cancel</a>
+      </div>
+    </form>
+  }
+</main>
