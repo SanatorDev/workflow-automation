@@ -30,7 +30,7 @@ jest.mock('../utils/secret-crypto', () => ({
 }));
 
 import { env } from '../config/env';
-import { Zap } from '../models/zap.model';
+import { IZap, Zap } from '../models/zap.model';
 import { User } from '../models/user.model';
 import {
   createRepoWebhook,
