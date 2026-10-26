@@ -114,6 +114,21 @@ Per the [web application flow](https://docs.github.com/en/apps/oauth-apps/buildi
 
 Login failures redirect to `/login?error=<code>` with a stable code (`oauth_not_configured`, `missing_code`, `invalid_state`, `access_denied`, `login_failed`) — never GitHub’s free-text `error_description`.
 
+## Local webhook testing (`gh webhook forward`)
+
+GitHub rejects webhook URLs on `localhost`. In development, when `PUBLIC_BASE_URL` is localhost, the server uses **`WEBHOOK_DELIVERY=forward`**: it does **not** register a GitHub webhook via the API, and signature verification is skipped (so `forward` is only allowed with a localhost `PUBLIC_BASE_URL`). Forward events with the [GitHub CLI](https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/using-the-github-cli-to-forward-webhooks-for-testing):
+
+```bash
+gh extension install cli/gh-webhook
+gh auth login   # required — webhook forward needs a github.com token
+gh auth status  # confirm you're logged in
+
+# After turning a Zap on, use the Zap id (also logged by the server / returned as webhookForwardCommand):
+gh webhook forward --repo=OWNER/REPO --events=pull_request --url=http://localhost:3000/api/webhooks/github/ZAP_ID
+```
+
+Leave that command running, then open a pull request on the trigger repo. For production (or a tunnel), set a public `PUBLIC_BASE_URL` and `WEBHOOK_DELIVERY=github` so the API registers real webhooks.
+
 ## API
 
 | Method | Path | Description |
@@ -129,6 +144,7 @@ Login failures redirect to `/login?error=<code>` with a stable code (`oauth_not_
 | `POST` | `/api/zaps` | Create a Zap |
 | `PUT` | `/api/zaps/:id` | Update a Zap |
 | `DELETE` | `/api/zaps/:id` | Delete a Zap |
+| `POST` | `/api/webhooks/github/:zapId` | GitHub webhook receiver (no session auth) |
 
 Example health response (connected):
 

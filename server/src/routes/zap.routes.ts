@@ -5,6 +5,12 @@ import {
   requireAuth,
 } from '../middleware/require-auth';
 import { IFieldMapping, IZap, IZapStep, Zap } from '../models/zap.model';
+import {
+  buildWebhookForwardCommand,
+  isWebhookForwardMode,
+  removeGitHubWebhookForZap,
+  syncGitHubWebhookAfterChange,
+} from '../services/zap-webhook.service';
 
 function userIdOf(req: Request): string {
   return (req as AuthenticatedRequest).userId;
@@ -175,6 +181,19 @@ function parseFieldMappings(
   return { ok: true, mappings };
 }
 
+function repositoryFromStep(step: IZapStep): string | undefined {
+  const config = step.configuration;
+  if (!config) {
+    return undefined;
+  }
+  if (config instanceof Map) {
+    const value = config.get('repository');
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+  const value = (config as Record<string, string>).repository;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
 function parseZapBody(body: unknown):
   | {
       ok: true;
@@ -210,6 +229,23 @@ function parseZapBody(body: unknown):
     return action;
   }
 
+  // Webhook fires on the trigger repo; the action comments using that PR number.
+  if (isGitHubApp(trigger.step.app) && isGitHubApp(action.step.app)) {
+    const triggerRepository = repositoryFromStep(trigger.step);
+    const actionRepository = repositoryFromStep(action.step);
+    if (
+      triggerRepository &&
+      actionRepository &&
+      triggerRepository.toLowerCase() !== actionRepository.toLowerCase()
+    ) {
+      return {
+        ok: false,
+        message:
+          'GitHub trigger and action must use the same repository (webhook PR number is repo-scoped)',
+      };
+    }
+  }
+
   return {
     ok: true,
     data: {
@@ -238,6 +274,11 @@ function stepToJson(step: IZapStep) {
 }
 
 function toZapJson(zap: IZap) {
+  const forwardCommand =
+    isWebhookForwardMode() && zap.isOn
+      ? buildWebhookForwardCommand(zap)
+      : null;
+
   return {
     id: zap.id,
     name: zap.name,
@@ -246,6 +287,7 @@ function toZapJson(zap: IZap) {
     action: stepToJson(zap.action),
     createdAt: zap.createdAt,
     updatedAt: zap.updatedAt,
+    ...(forwardCommand ? { webhookForwardCommand: forwardCommand } : {}),
   };
 }
 
@@ -296,7 +338,22 @@ router.post('/', async (req: Request, res: Response) => {
       userId: userIdOf(req),
       ...parsed.data,
     });
-    res.status(201).json(toZapJson(zap));
+
+    try {
+      await syncGitHubWebhookAfterChange(null, zap);
+    } catch (webhookErr) {
+      console.error('Failed to register GitHub webhook on create:', webhookErr);
+      await removeGitHubWebhookForZap(zap).catch(() => undefined);
+      await Zap.findByIdAndDelete(zap.id);
+      res.status(502).json({
+        message:
+          'Zap could not be turned on: failed to register GitHub webhook',
+      });
+      return;
+    }
+
+    const refreshed = await Zap.findById(zap.id);
+    res.status(201).json(toZapJson(refreshed ?? zap));
   } catch (err) {
     console.error('Failed to create zap:', err);
     res.status(500).json({ message: 'Failed to create zap' });
@@ -318,18 +375,48 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const zap = await Zap.findOneAndUpdate(
-      { _id: id, userId: userIdOf(req) },
-      { $set: parsed.data },
-      { new: true, runValidators: true }
-    );
+    const previous = await Zap.findOne({
+      _id: id,
+      userId: userIdOf(req),
+    }).select('+githubWebhookSecret');
 
-    if (!zap) {
+    if (!previous) {
       res.status(404).json({ message: 'Zap not found' });
       return;
     }
 
-    res.json(toZapJson(zap));
+    // Snapshot webhook-relevant fields before mutation (plain object for sync).
+    const previousSnapshot = {
+      id: previous.id,
+      userId: previous.userId,
+      isOn: previous.isOn,
+      trigger: previous.trigger,
+      action: previous.action,
+      githubWebhookId: previous.githubWebhookId,
+      githubWebhookSecret: previous.githubWebhookSecret,
+    } as IZap;
+
+    previous.set(parsed.data);
+    await previous.save();
+
+    try {
+      await syncGitHubWebhookAfterChange(previousSnapshot, previous);
+    } catch (webhookErr) {
+      console.error('Failed to sync GitHub webhook on update:', webhookErr);
+      if (previousSnapshot.isOn || previous.isOn) {
+        previous.isOn = false;
+        await previous.save();
+        await removeGitHubWebhookForZap(previous).catch(() => undefined);
+        res.status(502).json({
+          message:
+            'Zap could not be turned on: failed to register GitHub webhook',
+        });
+        return;
+      }
+    }
+
+    const refreshed = await Zap.findById(id);
+    res.json(toZapJson(refreshed ?? previous));
   } catch (err) {
     console.error('Failed to update zap:', err);
     res.status(500).json({ message: 'Failed to update zap' });
@@ -345,14 +432,18 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await Zap.findOneAndDelete({
+    const existing = await Zap.findOne({
       _id: id,
       userId: userIdOf(req),
-    });
-    if (!result) {
+    }).select('+githubWebhookSecret');
+
+    if (!existing) {
       res.status(404).json({ message: 'Zap not found' });
       return;
     }
+
+    await removeGitHubWebhookForZap(existing);
+    await Zap.deleteOne({ _id: id, userId: userIdOf(req) });
     res.status(204).end();
   } catch (err) {
     console.error('Failed to delete zap:', err);

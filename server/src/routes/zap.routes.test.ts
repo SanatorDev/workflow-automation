@@ -11,6 +11,9 @@ jest.mock('../config/env', () => ({
     nodeEnv: 'development',
     clientOrigin: 'http://localhost:4200',
     sessionSecret: 'a'.repeat(32),
+    publicBaseUrl: 'http://localhost:3000',
+    tokenEncryptionKey: 'a'.repeat(32),
+    webhookDelivery: 'forward',
   },
 }));
 
@@ -18,16 +21,38 @@ jest.mock('../models/zap.model', () => ({
   Zap: {
     find: jest.fn(),
     findOne: jest.fn(),
+    findById: jest.fn(),
     create: jest.fn(),
-    findOneAndUpdate: jest.fn(),
-    findOneAndDelete: jest.fn(),
+    findByIdAndDelete: jest.fn(),
+    deleteOne: jest.fn(),
   },
+}));
+
+jest.mock('../services/zap-webhook.service', () => ({
+  syncGitHubWebhookAfterChange: jest.fn().mockResolvedValue(undefined),
+  removeGitHubWebhookForZap: jest.fn().mockResolvedValue(undefined),
+  isWebhookForwardMode: jest.fn().mockReturnValue(true),
+  buildWebhookForwardCommand: jest
+    .fn()
+    .mockReturnValue(
+      'gh webhook forward --repo=octocat/Hello-World --events=pull_request --url=http://localhost:3000/api/webhooks/github/zap1'
+    ),
 }));
 
 import zapRoutes from './zap.routes';
 import { Zap } from '../models/zap.model';
+import {
+  removeGitHubWebhookForZap,
+  syncGitHubWebhookAfterChange,
+} from '../services/zap-webhook.service';
 
 const mockedZap = Zap as jest.Mocked<typeof Zap>;
+const mockedSyncWebhook = syncGitHubWebhookAfterChange as jest.MockedFunction<
+  typeof syncGitHubWebhookAfterChange
+>;
+const mockedRemoveWebhook = removeGitHubWebhookForZap as jest.MockedFunction<
+  typeof removeGitHubWebhookForZap
+>;
 const userId = new Types.ObjectId().toString();
 const zapId = new Types.ObjectId().toString();
 
@@ -177,13 +202,35 @@ describe('zap routes', () => {
     expect(mockedZap.create).not.toHaveBeenCalled();
   });
 
+  it('rejects GitHub trigger and action on different repositories', async () => {
+    const res = await request(app)
+      .post('/api/zaps')
+      .set('Cookie', sessionCookie())
+      .send({
+        ...githubZapBody,
+        action: {
+          ...githubZapBody.action,
+          configuration: {
+            ...githubZapBody.action.configuration,
+            repository: 'octocat/Other-Repo',
+          },
+        },
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/same repository/i);
+    expect(mockedZap.create).not.toHaveBeenCalled();
+  });
+
   it('normalizes github app casing on create', async () => {
-    mockedZap.create.mockResolvedValue({
+    const created = {
       id: 'new-zap',
       ...githubZapBody,
       createdAt: new Date('2026-01-01'),
       updatedAt: new Date('2026-01-01'),
-    } as never);
+    };
+    mockedZap.create.mockResolvedValue(created as never);
+    mockedZap.findById.mockResolvedValue(created as never);
 
     const res = await request(app)
       .post('/api/zaps')
@@ -207,15 +254,18 @@ describe('zap routes', () => {
         action: expect.objectContaining({ app: 'GitHub' }),
       })
     );
+    expect(mockedSyncWebhook).toHaveBeenCalled();
   });
 
   it('creates a zap for the current user and strips trigger fieldMappings', async () => {
-    mockedZap.create.mockResolvedValue({
+    const created = {
       id: 'new-zap',
       ...githubZapBody,
       createdAt: new Date('2026-01-01'),
       updatedAt: new Date('2026-01-01'),
-    } as never);
+    };
+    mockedZap.create.mockResolvedValue(created as never);
+    mockedZap.findById.mockResolvedValue(created as never);
 
     const res = await request(app)
       .post('/api/zaps')
@@ -283,6 +333,21 @@ describe('zap routes', () => {
   });
 
   it('updates a zap and can clear fieldMappings', async () => {
+    const existing = {
+      id: zapId,
+      userId,
+      ...githubZapBody,
+      isOn: false,
+      set: jest.fn(function (this: Record<string, unknown>, data: object) {
+        Object.assign(this, data);
+      }),
+      save: jest.fn().mockResolvedValue(undefined),
+      createdAt: new Date('2026-01-01'),
+      updatedAt: new Date('2026-01-01'),
+    };
+    const select = jest.fn().mockResolvedValue(existing);
+    mockedZap.findOne.mockReturnValue({ select } as never);
+
     const updated = {
       id: zapId,
       name: 'PR comment',
@@ -299,7 +364,7 @@ describe('zap routes', () => {
       createdAt: new Date('2026-01-01'),
       updatedAt: new Date('2026-01-02'),
     };
-    mockedZap.findOneAndUpdate.mockResolvedValue(updated as never);
+    mockedZap.findById.mockResolvedValue(updated as never);
 
     const res = await request(app)
       .put(`/api/zaps/${zapId}`)
@@ -321,22 +386,21 @@ describe('zap routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.isOn).toBe(true);
     expect(res.body.action.fieldMappings).toBeUndefined();
-    expect(mockedZap.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: zapId, userId },
-      {
-        $set: expect.objectContaining({
-          isOn: true,
-          action: expect.not.objectContaining({
-            fieldMappings: expect.anything(),
-          }),
+    expect(existing.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isOn: true,
+        action: expect.not.objectContaining({
+          fieldMappings: expect.anything(),
         }),
-      },
-      { new: true, runValidators: true }
+      })
     );
+    expect(existing.save).toHaveBeenCalled();
+    expect(mockedSyncWebhook).toHaveBeenCalled();
   });
 
   it('returns 404 when updating another user\'s zap', async () => {
-    mockedZap.findOneAndUpdate.mockResolvedValue(null);
+    const select = jest.fn().mockResolvedValue(null);
+    mockedZap.findOne.mockReturnValue({ select } as never);
 
     const res = await request(app)
       .put(`/api/zaps/${zapId}`)
@@ -344,29 +408,30 @@ describe('zap routes', () => {
       .send(githubZapBody);
 
     expect(res.status).toBe(404);
-    expect(mockedZap.findOneAndUpdate).toHaveBeenCalledWith(
-      { _id: zapId, userId },
-      expect.anything(),
-      expect.anything()
-    );
+    expect(mockedZap.findOne).toHaveBeenCalledWith({ _id: zapId, userId });
   });
 
   it('deletes a zap owned by the current user', async () => {
-    mockedZap.findOneAndDelete.mockResolvedValue({ id: zapId } as never);
+    const existing = { id: zapId, userId, githubWebhookId: 1 };
+    const select = jest.fn().mockResolvedValue(existing);
+    mockedZap.findOne.mockReturnValue({ select } as never);
+    mockedZap.deleteOne.mockResolvedValue({ deletedCount: 1 } as never);
 
     const res = await request(app)
       .delete(`/api/zaps/${zapId}`)
       .set('Cookie', sessionCookie());
 
     expect(res.status).toBe(204);
-    expect(mockedZap.findOneAndDelete).toHaveBeenCalledWith({
+    expect(mockedRemoveWebhook).toHaveBeenCalledWith(existing);
+    expect(mockedZap.deleteOne).toHaveBeenCalledWith({
       _id: zapId,
       userId,
     });
   });
 
   it('returns 404 when deleting a missing zap', async () => {
-    mockedZap.findOneAndDelete.mockResolvedValue(null);
+    const select = jest.fn().mockResolvedValue(null);
+    mockedZap.findOne.mockReturnValue({ select } as never);
 
     const res = await request(app)
       .delete(`/api/zaps/${zapId}`)
