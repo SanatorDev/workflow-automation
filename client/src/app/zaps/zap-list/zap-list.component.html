@@ -1,0 +1,61 @@
+<main class="page">
+  <header class="header">
+    <div>
+      <p class="eyebrow"><a routerLink="/welcome">← Home</a></p>
+      <h1>Your Zaps</h1>
+      <p class="subtitle">
+        Automated workflows: a trigger starts the Zap, then actions run.
+      </p>
+    </div>
+    <a routerLink="/zaps/new" class="primary-link">Create Zap</a>
+  </header>
+
+  @if (loading()) {
+    <p>Loading…</p>
+  } @else {
+    @if (error()) {
+      <p class="error" role="alert">{{ error() }}</p>
+    }
+
+    @if (zaps().length === 0) {
+      @if (!error()) {
+        <p class="empty">
+          No Zaps yet.
+          <a routerLink="/zaps/new">Create your first Zap</a>
+        </p>
+      }
+    } @else {
+      <ul class="zap-list">
+        @for (zap of zaps(); track zap.id) {
+          <li>
+            <a class="zap-row" [routerLink]="['/zaps', zap.id]">
+              <div class="zap-main">
+                <span class="zap-name">{{ zap.name }}</span>
+                <span class="zap-flow">
+                  {{ zap.trigger.app }} · {{ zap.trigger.event }}
+                  →
+                  {{ zap.action.app }} · {{ zap.action.event }}
+                </span>
+              </div>
+              <span
+                class="status"
+                [class.status-on]="zap.isOn"
+                [class.status-off]="!zap.isOn"
+              >
+                {{ zap.isOn ? 'On' : 'Off' }}
+              </span>
+            </a>
+            <button
+              type="button"
+              class="delete-button"
+              [disabled]="deletingId() === zap.id"
+              (click)="deleteZap(zap, $event)"
+            >
+              Delete
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  }
+</main>
