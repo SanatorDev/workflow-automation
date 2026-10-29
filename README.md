@@ -22,8 +22,8 @@ workflow-automation/
 │       ├── app.ts          # Express app (middleware + routes)
 │       ├── server.ts       # Bootstrap (env, DB, listen)
 │       ├── config/         # Env + Mongoose helpers
-│       ├── models/         # Mongoose models (User)
-│       ├── routes/         # API route modules (health, auth)
+│       ├── models/         # Mongoose models (User, Zap)
+│       ├── routes/         # API route modules (health, auth, zaps)
 │       └── services/       # GitHub OAuth helpers
 ├── .env                    # Secrets (not committed; see .env.example)
 ├── .env.example            # Template for required env vars
@@ -74,7 +74,7 @@ workflow-automation/
    - Authorization callback URL: `http://localhost:4200/api/auth/github/callback` (must match `GITHUB_CALLBACK_URL`; proxied to Express in local dev)
    - Copy the Client ID and Client Secret into `.env`
 
-   The app requests the `read:user` scope for login ([scopes](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)). Broader scopes (e.g. repo access) can be added when a feature needs them.
+   The app requests `read:user` and `repo` scopes ([scopes](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps)) so login works and the Zap editor can list the user’s repositories. Existing users who signed in before `repo` was added should log out and sign in again to grant it.
 
    In production, `SESSION_SECRET`, `TOKEN_ENCRYPTION_KEY`, and `GITHUB_CALLBACK_URL` are required. Secrets must be random and at least 32 characters (no example placeholders). `SESSION_SECRET` signs cookies; `TOKEN_ENCRYPTION_KEY` encrypts GitHub access tokens at rest — keep them distinct so either can be rotated alone.
 
@@ -108,11 +108,26 @@ Open [http://localhost:4200](http://localhost:4200). The login page offers **Log
 
 Per the [web application flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps):
 
-1. Browser visits `GET /api/auth/github` → redirect to GitHub authorize (`read:user`)
+1. Browser visits `GET /api/auth/github` → redirect to GitHub authorize (`read:user repo`)
 2. GitHub redirects to `GET /api/auth/github/callback` with a temporary `code`
 3. Server exchanges the code for an access token, loads `/user`, upserts the `User` document (access token encrypted at rest), sets a signed session cookie, then redirects to `/welcome`
 
 Login failures redirect to `/login?error=<code>` with a stable code (`oauth_not_configured`, `missing_code`, `invalid_state`, `access_denied`, `login_failed`) — never GitHub’s free-text `error_description`.
+
+## Local webhook testing (`gh webhook forward`)
+
+GitHub rejects webhook URLs on `localhost`. In development, when `PUBLIC_BASE_URL` is localhost, the server uses **`WEBHOOK_DELIVERY=forward`**: it does **not** register a GitHub webhook via the API, and signature verification is skipped (so `forward` is only allowed with a localhost `PUBLIC_BASE_URL`). Forward events with the [GitHub CLI](https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/using-the-github-cli-to-forward-webhooks-for-testing):
+
+```bash
+gh extension install cli/gh-webhook
+gh auth login   # required — webhook forward needs a github.com token
+gh auth status  # confirm you're logged in
+
+# After turning a Zap on, use the Zap id (also logged by the server / returned as webhookForwardCommand):
+gh webhook forward --repo=OWNER/REPO --events=pull_request --url=http://localhost:3000/api/webhooks/github/ZAP_ID
+```
+
+Leave that command running, then open a pull request on the trigger repo. For production (or a tunnel), set a public `PUBLIC_BASE_URL` and `WEBHOOK_DELIVERY=github` so the API registers real webhooks.
 
 ## API
 
@@ -123,6 +138,13 @@ Login failures redirect to `/login?error=<code>` with a stable code (`oauth_not_
 | `GET` | `/api/auth/github/callback` | OAuth callback; saves user and redirects to `/welcome` |
 | `GET` | `/api/auth/me` | Current session user (`name`, `login`) or `401` |
 | `POST` | `/api/auth/logout` | Clears the session cookie |
+| `GET` | `/api/github/repos` | List GitHub repositories for the current user |
+| `GET` | `/api/zaps` | List Zaps for the current user |
+| `GET` | `/api/zaps/:id` | Get one Zap |
+| `POST` | `/api/zaps` | Create a Zap |
+| `PUT` | `/api/zaps/:id` | Update a Zap |
+| `DELETE` | `/api/zaps/:id` | Delete a Zap |
+| `POST` | `/api/webhooks/github/:zapId` | GitHub webhook receiver (no session auth) |
 
 Example health response (connected):
 

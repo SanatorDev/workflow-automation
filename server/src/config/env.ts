@@ -67,11 +67,95 @@ function resolveGithubCallbackUrl(): string {
   return `${clientOrigin}/api/auth/github/callback`;
 }
 
+/**
+ * Public base URL GitHub can reach for webhooks.
+ * Production requires an explicit value; development defaults to local server.
+ */
+function resolvePublicBaseUrl(): string {
+  const configured = process.env.PUBLIC_BASE_URL?.trim().replace(/\/$/, '');
+  if (configured) {
+    return configured;
+  }
+
+  if (nodeEnv === 'production') {
+    throw new Error(
+      'PUBLIC_BASE_URL is required in production (e.g. https://your.host)'
+    );
+  }
+
+  return `http://localhost:${port}`;
+}
+
+export type WebhookDeliveryMode = 'github' | 'forward';
+
+function isLocalHostname(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '[::1]'
+  );
+}
+
+export function isLocalPublicBaseUrl(baseUrl: string): boolean {
+  try {
+    return isLocalHostname(new URL(baseUrl).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * How webhooks are delivered.
+ * - `github`: register a real repo webhook (needs a publicly reachable PUBLIC_BASE_URL)
+ * - `forward`: skip registration; use `gh webhook forward` for local testing
+ *
+ * Defaults to `forward` in development when PUBLIC_BASE_URL is localhost.
+ */
+export function resolveWebhookDelivery(
+  value: string | undefined,
+  options: { nodeEnv: string; publicBaseUrl: string }
+): WebhookDeliveryMode {
+  const configured = value?.trim().toLowerCase();
+  if (configured === 'github' || configured === 'forward') {
+    if (configured === 'forward') {
+      if (options.nodeEnv === 'production') {
+        throw new Error(
+          'WEBHOOK_DELIVERY=forward is not allowed in production'
+        );
+      }
+      if (!isLocalPublicBaseUrl(options.publicBaseUrl)) {
+        throw new Error(
+          'WEBHOOK_DELIVERY=forward requires a localhost PUBLIC_BASE_URL (HMAC is skipped in forward mode)'
+        );
+      }
+    }
+    return configured;
+  }
+
+  if (options.nodeEnv === 'production') {
+    return 'github';
+  }
+
+  return isLocalPublicBaseUrl(options.publicBaseUrl) ? 'forward' : 'github';
+}
+
+const publicBaseUrl = resolvePublicBaseUrl();
+
 export const env = {
   port,
   mongodbUri: process.env.MONGODB_URI,
   clientOrigin,
   nodeEnv,
+  publicBaseUrl,
+  /**
+   * `github` = create GitHub webhooks via API.
+   * `forward` = local testing with `gh webhook forward` (no API registration).
+   */
+  webhookDelivery: resolveWebhookDelivery(process.env.WEBHOOK_DELIVERY, {
+    nodeEnv,
+    publicBaseUrl,
+  }),
   githubClientId: process.env.GITHUB_CLIENT_ID || '',
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '',
   githubCallbackUrl: resolveGithubCallbackUrl(),

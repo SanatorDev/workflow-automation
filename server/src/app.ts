@@ -13,7 +13,17 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      // Preserve raw bytes for GitHub webhook HMAC verification.
+      const url = (req as Request).originalUrl ?? req.url;
+      if (typeof url === 'string' && url.startsWith('/api/webhooks')) {
+        (req as Request & { rawBody?: Buffer }).rawBody = buf;
+      }
+    },
+  })
+);
 app.use('/api', apiRoutes);
 
 /** Serves the Angular build. Call only from bootstrap; no-ops outside production. */

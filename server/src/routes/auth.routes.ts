@@ -1,6 +1,13 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
+import {
+  OAUTH_STATE_COOKIE,
+  SESSION_COOKIE,
+  clearSessionCookie,
+  getSessionUserId,
+  sessionCookieOptions,
+} from '../auth/session';
 import { env } from '../config/env';
 import { User } from '../models/user.model';
 import {
@@ -8,19 +15,12 @@ import {
   exchangeCodeForAccessToken,
   fetchGitHubUser,
 } from '../services/github-oauth.service';
-import {
-  clearCookie,
-  getCookie,
-  setCookie,
-  signValue,
-  unsignValue,
-} from '../utils/cookies';
+import { clearCookie, getCookie, setCookie, signValue } from '../utils/cookies';
 import { encryptSecret } from '../utils/secret-crypto';
 
 const router: Router = Router();
 
-export const OAUTH_STATE_COOKIE = 'oauth_state';
-export const SESSION_COOKIE = 'session';
+export { OAUTH_STATE_COOKIE, SESSION_COOKIE };
 const STATE_MAX_AGE_MS = 10 * 60 * 1000;
 const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -34,17 +34,6 @@ export const LOGIN_ERROR_CODES = {
 } as const;
 
 export type LoginErrorCode = keyof typeof LOGIN_ERROR_CODES;
-
-function cookieSecure(): boolean {
-  return env.nodeEnv === 'production';
-}
-
-function sessionCookieOptions() {
-  return {
-    secure: cookieSecure(),
-    sameSite: 'lax' as const,
-  };
-}
 
 function clientUrl(pathname: string, query?: Record<string, string>): string {
   if (env.nodeEnv === 'production') {
@@ -63,15 +52,6 @@ function clientUrl(pathname: string, query?: Record<string, string>): string {
 
 function redirectWithError(res: Response, code: LoginErrorCode): void {
   res.redirect(clientUrl('/login', { error: code }));
-}
-
-function getSessionUserId(req: Request): string | null {
-  const signed = getCookie(req, SESSION_COOKIE);
-  if (!signed) {
-    return null;
-  }
-
-  return unsignValue(signed, env.sessionSecret);
 }
 
 /** Step 1: redirect the browser to GitHub's authorize endpoint. */
@@ -154,7 +134,7 @@ router.get('/me', async (req: Request, res: Response) => {
 
   if (!userId || !mongoose.isValidObjectId(userId)) {
     if (userId) {
-      clearCookie(res, SESSION_COOKIE, sessionCookieOptions());
+      clearSessionCookie(res);
     }
     res.status(401).json({ message: 'Not authenticated' });
     return;
@@ -164,7 +144,7 @@ router.get('/me', async (req: Request, res: Response) => {
     const user = await User.findById(userId).select('name login');
 
     if (!user) {
-      clearCookie(res, SESSION_COOKIE, sessionCookieOptions());
+      clearSessionCookie(res);
       res.status(401).json({ message: 'Not authenticated' });
       return;
     }
@@ -180,7 +160,7 @@ router.get('/me', async (req: Request, res: Response) => {
 });
 
 router.post('/logout', (_req: Request, res: Response) => {
-  clearCookie(res, SESSION_COOKIE, sessionCookieOptions());
+  clearSessionCookie(res);
   res.status(204).end();
 });
 
